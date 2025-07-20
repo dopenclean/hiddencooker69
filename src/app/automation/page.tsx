@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { ethers } from 'ethers';
 import './automation.css';
@@ -227,27 +227,7 @@ export default function AutomationPage() {
     };
   };
 
-  // Check balances
-  const _checkBalances = async (walletAddress: string) => {
-    try {
-      const [phrsBalance, wphrsBalance, usdcBalance, usdtBalance] = await Promise.all([
-        getTokenBalanceHelper("PHRS", walletAddress),
-        getTokenBalanceHelper(CONTRACTS.WPHRS, walletAddress),
-        getTokenBalanceHelper(CONTRACTS.USDC, walletAddress),
-        getTokenBalanceHelper(CONTRACTS.USDT, walletAddress)
-      ]);
-
-      return {
-        phrs: phrsBalance,
-        wphrs: wphrsBalance,
-        usdc: usdcBalance,
-        usdt: usdtBalance
-      };
-    } catch (error) {
-      console.error('Balance check failed:', error);
-      return null;
-    }
-  };
+  // Removed duplicate _checkBalances function - now using useCallback version below
 
   // Step handlers
   const handlePrivateKeySubmit = () => {
@@ -495,28 +475,52 @@ export default function AutomationPage() {
     }
   };
 
+  // Check balances function with useCallback to prevent infinite loops
+  const checkBalances = useCallback(async (walletAddress: string) => {
+    try {
+      const [phrsBalance, wphrsBalance, usdcBalance, usdtBalance] = await Promise.all([
+        getTokenBalanceHelper("PHRS", walletAddress),
+        getTokenBalanceHelper(CONTRACTS.WPHRS, walletAddress),
+        getTokenBalanceHelper(CONTRACTS.USDC, walletAddress),
+        getTokenBalanceHelper(CONTRACTS.USDT, walletAddress)
+      ]);
+
+      return {
+        phrs: phrsBalance,
+        wphrs: wphrsBalance,
+        usdc: usdcBalance,
+        usdt: usdtBalance
+      };
+    } catch (error) {
+      console.error('Balance check failed:', error);
+      return {
+        phrs: 0,
+        wphrs: 0,
+        usdc: 0,
+        usdt: 0
+      };
+    }
+  }, []);
+
   // Auto-calculate costs and check balances when reaching step 5
   useEffect(() => {
     const calculateCostsAndCheckBalance = async () => {
       if (!wallet) return;
 
       try {
-        // Calculate costs
-        const phrsTransfer = parseFloat(transferCount) || 0;
-        const liquidityOps = parseFloat(liquidityCount) || 0;
-        const swapOps = parseFloat(swapCount) || 0;
-
-        const costs = {
-          phrs: phrsTransfer * 1.0,
-          wphrs: liquidityOps * 100.0 + swapOps * 50.0,
-          usdc: liquidityOps * 10.0 + swapOps * 25.0,
-          usdt: liquidityOps * 10.0 + swapOps * 25.0
+        // Calculate costs using proper FIXED_AMOUNTS
+        const transactionCounts = {
+          transfers: parseFloat(transferCount) || 0,
+          liquidity: parseFloat(liquidityCount) || 0,
+          swaps: parseFloat(swapCount) || 0
         };
+
+        const costs = _calculateCosts(transactionCounts);
 
         setCosts(costs);
 
         // Check balances
-        const balanceResults = await _checkBalances(wallet.address);
+        const balanceResults = await checkBalances(wallet.address);
         setBalances(balanceResults);
 
         // Auto advance to step 6 after 2 seconds
@@ -535,7 +539,7 @@ export default function AutomationPage() {
     if (currentStep === 5) {
       calculateCostsAndCheckBalance();
     }
-  }, [currentStep, wallet, transferCount, liquidityCount, swapCount, _checkBalances]);
+  }, [currentStep, wallet, transferCount, liquidityCount, swapCount, checkBalances]);
 
   // Logout function
   const handleLogout = () => {
