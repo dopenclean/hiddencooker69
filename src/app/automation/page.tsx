@@ -78,7 +78,7 @@ export default function AutomationPage() {
     type: 'none',
     rotate: false
   });
-  const [balances] = useState<TokenBalance | null>(null);
+  const [balances, setBalances] = useState<TokenBalance | null>(null);
   const [costs, setCosts] = useState<CostCalculation | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
@@ -495,12 +495,13 @@ export default function AutomationPage() {
     }
   };
 
-  // Auto-calculate costs when reaching step 5
+  // Auto-calculate costs and check balances when reaching step 5
   useEffect(() => {
-    const calculateCosts = async () => {
+    const calculateCostsAndCheckBalance = async () => {
       if (!wallet) return;
 
       try {
+        // Calculate costs
         const phrsTransfer = parseFloat(transferCount) || 0;
         const liquidityOps = parseFloat(liquidityCount) || 0;
         const swapOps = parseFloat(swapCount) || 0;
@@ -513,15 +514,28 @@ export default function AutomationPage() {
         };
 
         setCosts(costs);
+
+        // Check balances
+        const balanceResults = await _checkBalances(wallet.address);
+        setBalances(balanceResults);
+
+        // Auto advance to step 6 after 2 seconds
+        setTimeout(() => {
+          setCurrentStep(6);
+        }, 2000);
       } catch (error) {
-        console.error('Cost calculation failed:', error);
+        console.error('Cost calculation or balance check failed:', error);
+        // Still advance to step 6 even if there's an error
+        setTimeout(() => {
+          setCurrentStep(6);
+        }, 2000);
       }
     };
 
     if (currentStep === 5) {
-      calculateCosts();
+      calculateCostsAndCheckBalance();
     }
-  }, [currentStep, wallet, transferCount, liquidityCount, swapCount]);
+  }, [currentStep, wallet, transferCount, liquidityCount, swapCount, _checkBalances]);
 
   // Logout function
   const handleLogout = () => {
@@ -662,6 +676,23 @@ export default function AutomationPage() {
               >
                 NO
               </button>
+            </div>
+          </div>
+        );
+
+      case 5:
+        return (
+          <div className="step-container">
+            <h2>Cost Calculation & Balance Check</h2>
+            <div className="cost-breakdown">
+              <div style={{ textAlign: 'center', padding: '20px' }}>
+                <div className="loading-spinner" style={{ margin: '0 auto 15px auto' }}></div>
+                <h3>Calculating costs and checking balances...</h3>
+                <p>Please wait while we calculate the required costs and check your wallet balance.</p>
+                <p style={{ fontSize: '14px', color: '#888', marginTop: '15px' }}>
+                  This will take a few seconds...
+                </p>
+              </div>
             </div>
           </div>
         );
