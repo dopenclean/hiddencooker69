@@ -247,9 +247,12 @@
   padding: 15px;
   height: 400px;
   overflow-y: auto;
+  overflow-x: hidden;
   font-family: 'Courier New', monospace;
   font-size: 14px;
   border: 1px solid var(--automation-border);
+  word-wrap: break-word;
+  white-space: pre-wrap;
 }
 
 .log-entry {
@@ -277,6 +280,10 @@
 /* Scrollbar styling for logs */
 .logs::-webkit-scrollbar {
   width: 8px;
+}
+
+.logs::-webkit-scrollbar:horizontal {
+  height: 0px;
 }
 
 .logs::-webkit-scrollbar-track {
