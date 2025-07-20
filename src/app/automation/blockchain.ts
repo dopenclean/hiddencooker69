@@ -116,10 +116,10 @@ export async function approveToken(
     const contract = new ethers.Contract(tokenAddress, ERC20_ABI, signer);
     
     // Add timeout wrapper for contract calls
-    const timeoutPromise = (promise: Promise<any>, timeoutMs: number) => {
+    const timeoutPromise = <T>(promise: Promise<T>, timeoutMs: number): Promise<T> => {
       return Promise.race([
         promise,
-        new Promise((_, reject) => 
+        new Promise<T>((_, reject) => 
           setTimeout(() => reject(new Error(`Operation timed out after ${timeoutMs}ms`)), timeoutMs)
         )
       ]);
@@ -158,7 +158,7 @@ export async function approveToken(
       
       console.log(`Approve transaction sent: ${tx.hash}, waiting for confirmation...`);
       const receipt = await timeoutPromise(tx.wait(), 300000); // 5 minute timeout
-      console.log(`Approve transaction confirmed in block ${receipt?.blockNumber}`);
+      console.log(`Approve transaction confirmed in block ${(receipt as any)?.blockNumber}`);
       
       return tx;
     } else {
@@ -184,10 +184,10 @@ export async function performTransfer(
     const amountWei = ethers.parseEther(amount.toString());
     
     // Timeout wrapper
-    const timeoutPromise = (promise: Promise<any>, timeoutMs: number) => {
+    const timeoutPromise = <T>(promise: Promise<T>, timeoutMs: number): Promise<T> => {
       return Promise.race([
         promise,
-        new Promise((_, reject) => 
+        new Promise<T>((_, reject) => 
           setTimeout(() => reject(new Error(`Operation timed out after ${timeoutMs}ms`)), timeoutMs)
         )
       ]);
@@ -232,7 +232,7 @@ export async function performTransfer(
         hash: tx.hash,
         blockNumber: receipt?.blockNumber || null
       };
-    } catch (confirmError) {
+    } catch {
       console.log(`⏰ Transaction confirmation timed out after 2 minutes`);
       console.log(`📋 Transaction hash: ${tx.hash}`);
       console.log(`🔍 Check manually: https://testnet.pharosscan.xyz/tx/${tx.hash}`);
@@ -243,7 +243,7 @@ export async function performTransfer(
         blockNumber: null
       };
     }
-  } catch (error: any) {
+      } catch (error: unknown) {
     console.error('Advanced transfer failed, trying simple method:', error);
     
     // Fallback to simple transfer method
@@ -267,7 +267,7 @@ export async function performTransfer(
           hash: simpleTx.hash,
           blockNumber: simpleReceipt?.blockNumber || null
         };
-      } catch (confirmError) {
+      } catch {
         console.log('Simple transaction sent but confirmation timed out');
         return {
           hash: simpleTx.hash,

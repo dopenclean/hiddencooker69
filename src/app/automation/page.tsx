@@ -51,12 +51,13 @@ interface CostCalculation {
 
 const RPC_URL = "https://testnet.dplabs-internal.com";
 
-const ERC20_ABI = [
-  "function balanceOf(address) view returns (uint256)",
-  "function decimals() view returns (uint8)",
-  "function allowance(address,address) view returns (uint256)",
-  "function approve(address,uint256) returns (bool)"
-];
+// ERC20 ABI for token interactions
+// const ERC20_ABI = [
+//   "function balanceOf(address) view returns (uint256)",
+//   "function decimals() view returns (uint8)",
+//   "function allowance(address,address) view returns (uint256)",
+//   "function approve(address,uint256) returns (bool)"
+// ];
 
 export default function AutomationPage() {
   const router = useRouter();
@@ -73,7 +74,7 @@ export default function AutomationPage() {
     liquidity: 0,
     swaps: 0
   });
-  const [proxySettings, setProxySettings] = useState<ProxySettings>({
+  const [, setProxySettings] = useState<ProxySettings>({
     type: 'none',
     rotate: false
   });
@@ -172,7 +173,7 @@ export default function AutomationPage() {
         address: wallet.address,
         privateKey: privateKey
       };
-    } catch (error) {
+    } catch {
       return null;
     }
   };
@@ -404,8 +405,9 @@ export default function AutomationPage() {
               addLog(`     ✅ Transfer sent (confirmation pending)`);
             }
             addLog(`     📋 Hash: ${result.hash}`);
-          } catch (error: any) {
-            addLog(`     ❌ Transfer failed: ${error.message || error}`);
+          } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            addLog(`     ❌ Transfer failed: ${errorMessage}`);
             console.error('Transfer error:', error);
             
             // Continue with next transfer even if one fails
@@ -447,8 +449,9 @@ export default function AutomationPage() {
             addLog(`     Hash: ${result.hash}`);
             addLog(`     Block: ${result.blockNumber}`);
             addLog(`     Explorer: https://testnet.pharosscan.xyz/tx/${result.hash}`);
-          } catch (error: any) {
-            addLog(`     ❌ Add liquidity failed: ${error.message || error}`);
+          } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            addLog(`     ❌ Add liquidity failed: ${errorMessage}`);
             console.error('Detailed error:', error);
           }
           
@@ -479,8 +482,9 @@ export default function AutomationPage() {
             addLog(`     Hash: ${result.hash}`);
             addLog(`     Block: ${result.blockNumber}`);
             addLog(`     Explorer: https://testnet.pharosscan.xyz/tx/${result.hash}`);
-          } catch (error: any) {
-            addLog(`     ❌ Swap failed: ${error.message || error}`);
+          } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            addLog(`     ❌ Swap failed: ${errorMessage}`);
             console.error('Swap error:', error);
           }
           
@@ -492,8 +496,9 @@ export default function AutomationPage() {
       clearTimeout(automationTimeout);
       setIsProcessing(false);
       
-    } catch (error: any) {
-      addLog(`❌ Automation failed: ${error.message || error}`);
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      addLog(`❌ Automation failed: ${errorMessage}`);
       console.error('Automation error:', error);
       clearTimeout(automationTimeout);
       setIsProcessing(false);
@@ -502,10 +507,31 @@ export default function AutomationPage() {
 
   // Auto-calculate costs when reaching step 5
   useEffect(() => {
+    const calculateCosts = async () => {
+      if (!wallet) return;
+
+      try {
+        const phrsTransfer = parseFloat(transferCount) || 0;
+        const liquidityOps = parseFloat(liquidityCount) || 0;
+        const swapOps = parseFloat(swapCount) || 0;
+
+        const costs = {
+          phrs: phrsTransfer * 1.0,
+          wphrs: liquidityOps * 100.0 + swapOps * 50.0,
+          usdc: liquidityOps * 10.0 + swapOps * 25.0,
+          usdt: liquidityOps * 10.0 + swapOps * 25.0
+        };
+
+        setCosts(costs);
+      } catch (error) {
+        console.error('Cost calculation failed:', error);
+      }
+    };
+
     if (currentStep === 5) {
-      handleCostCalculation();
+      calculateCosts();
     }
-  }, [currentStep]);
+  }, [currentStep, wallet, transferCount, liquidityCount, swapCount]);
 
   // Logout function
   const handleLogout = () => {
@@ -690,7 +716,7 @@ export default function AutomationPage() {
                   <div className="success">🎉 You are ready to go!</div>
                   <div className="button-group">
                     <button onClick={startAutomation} className="button">
-                      Let's Go
+                      Let&apos;s Go
                     </button>
                     <button onClick={() => setCurrentStep(0)} className="button secondary">
                       Cancel
@@ -707,7 +733,7 @@ export default function AutomationPage() {
           <div className="automation-container">
             <div className="warning-header">
               {isProcessing && <div className="loading-spinner"></div>}
-              ⚠️ Don't close the browser until it's finished
+              ⚠️ Don&apos;t close the browser until it&apos;s finished
             </div>
             <div className="logs-container">
               <h3>Live Logs:</h3>
@@ -803,14 +829,14 @@ export default function AutomationPage() {
             <div className="modal-content">
               <p>
                 At Pharos Network Automation, we take your privacy and security seriously. 
-                Here's what you need to know about how we handle your information:
+                Here&apos;s what you need to know about how we handle your information:
               </p>
               <h3>Your Wallet Security</h3>
               <p>
                 • We never store your private keys on our servers<br/>
                 • All operations are performed in your browser session only<br/>
                 • Your private key is used temporarily for transaction signing and then discarded<br/>
-                • We don't have any database or permanent storage system
+                • We don&apos;t have any database or permanent storage system
               </p>
               <h3>Session-Based Processing</h3>
               <p>
@@ -821,7 +847,7 @@ export default function AutomationPage() {
               <h3>Transaction Privacy</h3>
               <p>
                 • All transactions are performed directly on the blockchain<br/>
-                • We don't monitor or log your transaction activities<br/>
+                • We don&apos;t monitor or log your transaction activities<br/>
                 • Your wallet interactions remain completely private
               </p>
               <p className="emphasis">
