@@ -78,7 +78,7 @@ export default function AutomationPage() {
     type: 'none',
     rotate: false
   });
-  const [balances, setBalances] = useState<TokenBalance | null>(null);
+  const [balances] = useState<TokenBalance | null>(null);
   const [costs, setCosts] = useState<CostCalculation | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
@@ -185,7 +185,7 @@ export default function AutomationPage() {
   };
 
   // Calculate costs
-  const calculateCosts = (counts: TransactionCounts): CostCalculation => {
+  const _calculateCosts = (counts: TransactionCounts): CostCalculation => {
     // Transfer costs
     const phrsFromTransfers = counts.transfers * FIXED_AMOUNTS.PHRS;
     
@@ -228,7 +228,7 @@ export default function AutomationPage() {
   };
 
   // Check balances
-  const checkBalances = async (walletAddress: string) => {
+  const _checkBalances = async (walletAddress: string) => {
     try {
       const [phrsBalance, wphrsBalance, usdcBalance, usdtBalance] = await Promise.all([
         getTokenBalanceHelper("PHRS", walletAddress),
@@ -318,17 +318,7 @@ export default function AutomationPage() {
     setCurrentStep(5);
   };
 
-  const handleCostCalculation = async () => {
-    if (!wallet) return;
-
-    const calculatedCosts = calculateCosts(transactionCounts);
-    setCosts(calculatedCosts);
-
-    const walletBalances = await checkBalances(wallet.address);
-    setBalances(walletBalances);
-
-    setCurrentStep(6);
-  };
+  // Cost calculation is now handled in useEffect
 
   const checkSufficientBalance = (): boolean => {
     if (!balances || !costs) return false;

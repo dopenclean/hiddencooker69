@@ -158,7 +158,7 @@ export async function approveToken(
       
       console.log(`Approve transaction sent: ${tx.hash}, waiting for confirmation...`);
       const receipt = await timeoutPromise(tx.wait(), 300000); // 5 minute timeout
-      console.log(`Approve transaction confirmed in block ${(receipt as any)?.blockNumber}`);
+      console.log(`Approve transaction confirmed in block ${(receipt as { blockNumber?: number })?.blockNumber}`);
       
       return tx;
     } else {
