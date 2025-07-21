@@ -7,12 +7,13 @@ import { checkAuthSession } from './utils/auth';
 export default function Home() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [showOptions, setShowOptions] = useState(false);
   const router = useRouter();
   
   // Check if user is already authenticated
   useEffect(() => {
     if (checkAuthSession()) {
-      router.push('/automation');
+      setShowOptions(true);
     }
   }, [router]);
   
@@ -26,12 +27,57 @@ export default function Home() {
       
       document.cookie = `auth_session=authenticated; expires=${expirationTime.toUTCString()}; path=/; secure; samesite=strict`;
       
-      router.push('/automation');
+      // Show options instead of redirecting directly
+      setShowOptions(true);
     } else {
       setError('Invalid password');
       setPassword('');
     }
   };
+
+  const handleZenithClick = () => {
+    router.push('/automation');
+  };
+
+  const handleFaroClick = () => {
+    router.push('/automation2');
+  };
+
+  // Show options after successful authentication
+  if (showOptions) {
+    return (
+      <div className="homepage">
+        <div className="container">
+          <div className="card">
+            <h2 style={{ textAlign: 'center', marginBottom: '2rem', color: '#fff' }}>
+              Choose Your Path
+            </h2>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <button 
+                className="button"
+                onClick={handleZenithClick}
+                style={{ padding: '1rem 2rem', fontSize: '1.1rem' }}
+              >
+                Zenith
+              </button>
+              <button 
+                className="button"
+                onClick={handleFaroClick}
+                style={{ 
+                  padding: '1rem 2rem', 
+                  fontSize: '1.1rem',
+                  backgroundColor: '#22c55e',
+                  cursor: 'pointer'
+                }}
+              >
+                Faro
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="homepage">

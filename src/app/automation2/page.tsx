@@ -8,13 +8,13 @@ import {
   getProviderAndSigner,
   generateRandomAddress,
   performTransfer,
-  addLiquidity,
-  performSwap,
-  getLiquidityPairs,
-  getSwapPairs,
+  addFaroLiquidity,
+  performFaroSwap,
+  getFaroLiquidityPairs,
+  getFaroSwapPairs,
   getTokenBalance,
-  CONTRACTS,
-  FIXED_AMOUNTS
+  FARO_CONTRACTS,
+  FARO_FIXED_AMOUNTS
 } from './blockchain';
 import { checkAuthSession, clearAuthSession } from '../utils/auth';
 
@@ -49,15 +49,7 @@ interface CostCalculation {
   usdt: number;
 }
 
-const RPC_URL = "https://testnet.dplabs-internal.com";
-
-// ERC20 ABI for token interactions
-// const ERC20_ABI = [
-//   "function balanceOf(address) view returns (uint256)",
-//   "function decimals() view returns (uint8)",
-//   "function allowance(address,address) view returns (uint256)",
-//   "function approve(address,uint256) returns (bool)"
-// ];
+const RPC_URL = "https://api.zan.top/node/v1/pharos/testnet/54b49326c9f44b6e8730dc5dd4348421";
 
 export default function AutomationPage() {
   const router = useRouter();
@@ -103,16 +95,12 @@ export default function AutomationPage() {
       setIsCheckingAuth(false);
       
       if (!isValid) {
-        // Redirect to home page if not authenticated
         router.push('/');
       }
     };
 
     checkAuth();
-    
-    // Check authentication every minute
     const authInterval = setInterval(checkAuth, 60000);
-    
     return () => clearInterval(authInterval);
   }, [router]);
 
@@ -121,7 +109,6 @@ export default function AutomationPage() {
     const timestamp = new Date().toLocaleTimeString();
     setLogs(prev => {
       const newLogs = [...prev, `[${timestamp}] ${message}`];
-      // Auto-scroll to bottom
       setTimeout(() => {
         const logsContainer = document.querySelector('.logs');
         if (logsContainer) {
@@ -134,7 +121,6 @@ export default function AutomationPage() {
 
   // Render log entry with clickable links
   const renderLogEntry = (log: string, index: number) => {
-    // Check if log contains explorer URL
     const explorerMatch = log.match(/(https:\/\/testnet\.pharosscan\.xyz\/tx\/0x[a-fA-F0-9]+)/);
     
     if (explorerMatch) {
@@ -184,50 +170,53 @@ export default function AutomationPage() {
     return await getTokenBalance(tokenAddress, walletAddress, provider);
   };
 
-  // Calculate costs
+  // Calculate costs for Faroswap
   const _calculateCosts = (counts: TransactionCounts): CostCalculation => {
-    // Transfer costs
-    const phrsFromTransfers = counts.transfers * FIXED_AMOUNTS.PHRS;
+    // Transfer costs (same PHRS transfers to friends)
+    const phrsFromTransfers = counts.transfers * FARO_FIXED_AMOUNTS.PHRS;
     
-    // Liquidity costs (assume even distribution across 3 pairs)
-    const lpPerPair = Math.floor(counts.liquidity / 3);
-    const lpRemainder = counts.liquidity % 3;
+    // Liquidity costs for Faroswap DVM pairs (if pool addresses are available)
+    const availablePairs = getFaroLiquidityPairs().length;
+    let usdcFromLp = 0;
+    let usdtFromLp = 0;
     
-    const usdcFromLp = (lpPerPair * 2 + Math.min(lpRemainder, 2)) * FIXED_AMOUNTS.USDC;
-    const usdtFromLp = (lpPerPair * 2 + Math.max(0, Math.min(lpRemainder - 1, 2))) * FIXED_AMOUNTS.USDT;
-    const wphrsFromLp = (lpPerPair * 2 + Math.max(0, lpRemainder - 2) + Math.min(lpRemainder, 1)) * FIXED_AMOUNTS.WPHRS;
-    
-    // Swap costs (assume even distribution across 6 swap types)
-    const swapPerType = Math.floor(counts.swaps / 6);
-    const swapRemainder = counts.swaps % 6;
-    
-    let usdcFromSwap = swapPerType * 2 * FIXED_AMOUNTS.USDC;
-    let usdtFromSwap = swapPerType * 2 * FIXED_AMOUNTS.USDT;
-    let wphrsFromSwap = swapPerType * 2 * FIXED_AMOUNTS.WPHRS;
-    
-    // Add remainder swaps
-    if (swapRemainder > 0) {
-      usdcFromSwap += Math.min(swapRemainder, 2) * FIXED_AMOUNTS.USDC;
+    if (availablePairs > 0) {
+      const lpPerPair = Math.floor(counts.liquidity / availablePairs);
+      const lpRemainder = counts.liquidity % availablePairs;
+      
+      usdcFromLp = (lpPerPair * 2 + Math.min(lpRemainder, 1)) * FARO_FIXED_AMOUNTS.USDC;
+      usdtFromLp = (lpPerPair * 2 + Math.max(0, lpRemainder)) * FARO_FIXED_AMOUNTS.USDT;
     }
-    if (swapRemainder > 2) {
-      usdtFromSwap += Math.min(swapRemainder - 2, 2) * FIXED_AMOUNTS.USDT;
-    }
-    if (swapRemainder > 4) {
-      wphrsFromSwap += (swapRemainder - 4) * FIXED_AMOUNTS.WPHRS;
-    }
+    
+    // Swap costs (PHRS, WPHRS, USDC, USDT swaps only - 10 valid pairs)
+    const swapPerType = Math.floor(counts.swaps / 10);
+    const swapRemainder = counts.swaps % 10;
+    
+    let phrsFromSwap = swapPerType * 2 * FARO_FIXED_AMOUNTS.PHRS; // PHRS can swap to USDC and USDT
+    let wphrsFromSwap = swapPerType * 3 * FARO_FIXED_AMOUNTS.WPHRS; // WPHRS can swap to USDC, USDT
+    let usdcFromSwap = swapPerType * 3 * FARO_FIXED_AMOUNTS.USDC; // USDC can swap to WPHRS, USDT
+    let usdtFromSwap = swapPerType * 3 * FARO_FIXED_AMOUNTS.USDT; // USDT can swap to WPHRS, USDC
+    
+    // Add remainder swaps (distribute evenly)
+    if (swapRemainder > 0) usdcFromSwap += FARO_FIXED_AMOUNTS.USDC; // USDC->WPHRS
+    if (swapRemainder > 1) usdcFromSwap += FARO_FIXED_AMOUNTS.USDC; // USDC->USDT
+    if (swapRemainder > 2) usdtFromSwap += FARO_FIXED_AMOUNTS.USDT; // USDT->WPHRS
+    if (swapRemainder > 3) usdtFromSwap += FARO_FIXED_AMOUNTS.USDT; // USDT->USDC
+    if (swapRemainder > 4) wphrsFromSwap += FARO_FIXED_AMOUNTS.WPHRS; // WPHRS->USDC
+    if (swapRemainder > 5) wphrsFromSwap += FARO_FIXED_AMOUNTS.WPHRS; // WPHRS->USDT
+    if (swapRemainder > 6) phrsFromSwap += FARO_FIXED_AMOUNTS.PHRS; // PHRS->USDC
+    if (swapRemainder > 7) phrsFromSwap += FARO_FIXED_AMOUNTS.PHRS; // PHRS->USDT
 
     // Gas buffer
     const gasBuffer = (counts.transfers + counts.liquidity + counts.swaps) * 0.001;
 
     return {
-      phrs: phrsFromTransfers + gasBuffer,
-      wphrs: wphrsFromLp + wphrsFromSwap,
+      phrs: phrsFromTransfers + phrsFromSwap + gasBuffer,
+      wphrs: wphrsFromSwap,
       usdc: usdcFromLp + usdcFromSwap,
       usdt: usdtFromLp + usdtFromSwap
     };
   };
-
-  // Removed duplicate _checkBalances function - now using useCallback version below
 
   // Step handlers
   const handlePrivateKeySubmit = () => {
@@ -289,7 +278,7 @@ export default function AutomationPage() {
       setCurrentStep(5);
     } else {
       setProxySettings(prev => ({ ...prev, type }));
-      setCurrentStep(4.5); // Intermediate step for rotation question
+      setCurrentStep(4.5);
     }
   };
 
@@ -297,8 +286,6 @@ export default function AutomationPage() {
     setProxySettings(prev => ({ ...prev, rotate }));
     setCurrentStep(5);
   };
-
-  // Cost calculation is now handled in useEffect
 
   const checkSufficientBalance = (): boolean => {
     if (!balances || !costs) return false;
@@ -316,24 +303,22 @@ export default function AutomationPage() {
     
     setIsProcessing(true);
     setCurrentStep(7);
-    addLog("🚀 Starting automation process...");
+    addLog("🚀 Starting Faroswap automation process...");
     addLog(`📧 Session ID: ${sessionId}`);
     addLog(`👛 Wallet: ${wallet.address}`);
     
-    // Add timeout for entire automation process
     const automationTimeout = setTimeout(() => {
       addLog("⏰ Automation timed out after 30 minutes");
       setIsProcessing(false);
-    }, 30 * 60 * 1000); // 30 minutes
+    }, 30 * 60 * 1000);
     
     try {
       const { provider, signer } = getProviderAndSigner(wallet.privateKey);
       
-      // Test network connectivity first
-      addLog("🔍 Testing network connectivity...");
+      addLog("🔍 Testing Faroswap network connectivity...");
       try {
         const blockNumber = await provider.getBlockNumber();
-        addLog(`✅ Connected to network (block ${blockNumber})`);
+        addLog(`✅ Connected to Pharos network (block ${blockNumber})`);
         
         const balance = await provider.getBalance(wallet.address);
         const balanceEth = parseFloat(ethers.formatEther(balance));
@@ -347,7 +332,7 @@ export default function AutomationPage() {
         throw new Error("Network connectivity issue");
       }
       
-      // Execute transfers
+      // Execute transfers (same as Zenith)
       if (transactionCounts.transfers > 0) {
         addLog("=== FRIEND TRANSFERS ===");
         for (let i = 0; i < transactionCounts.transfers; i++) {
@@ -355,18 +340,11 @@ export default function AutomationPage() {
           
           const receiver = generateRandomAddress();
           addLog(`     To: ${receiver.slice(0, 6)}...${receiver.slice(-6)}`);
-          addLog(`     Amount: ${FIXED_AMOUNTS.PHRS} PHRS`);
+          addLog(`     Amount: ${FARO_FIXED_AMOUNTS.PHRS} PHRS`);
           addLog(`     🔄 Preparing transaction...`);
           
           try {
-            // Add progress indicator for long operations
-            const progressInterval = setInterval(() => {
-              addLog(`     ⏳ Transaction in progress...`);
-            }, 30000); // Update every 30 seconds
-            
-            const result = await performTransfer(receiver, FIXED_AMOUNTS.PHRS, signer);
-            clearInterval(progressInterval);
-            
+            const result = await performTransfer(receiver, FARO_FIXED_AMOUNTS.PHRS, signer);
             addLog(`     🔗 Explorer: https://testnet.pharosscan.xyz/tx/${result.hash}`);
             
             if (result.blockNumber) {
@@ -378,13 +356,9 @@ export default function AutomationPage() {
           } catch (error: unknown) {
             const errorMessage = error instanceof Error ? error.message : String(error);
             addLog(`     ❌ Transfer failed: ${errorMessage}`);
-            console.error('Transfer error:', error);
-            
-            // Continue with next transfer even if one fails
             addLog(`     ⏭️ Continuing to next transfer...`);
           }
           
-          // Wait between transactions to prevent nonce conflicts
           if (i < transactionCounts.transfers - 1) {
             addLog(`     ⏳ Waiting 5 seconds before next transfer...`);
             await new Promise(resolve => setTimeout(resolve, 5000));
@@ -392,47 +366,50 @@ export default function AutomationPage() {
         }
       }
       
-      // Execute liquidity additions
+      // Execute Faroswap liquidity additions
       if (transactionCounts.liquidity > 0) {
-        addLog("=== ADD LIQUIDITY ===");
-        const liquidityPairs = getLiquidityPairs();
+        addLog("=== ADD FAROSWAP LIQUIDITY ===");
+        const liquidityPairs = getFaroLiquidityPairs();
         
-        for (let i = 0; i < transactionCounts.liquidity; i++) {
-          addLog(`Liquidity ${i + 1}/${transactionCounts.liquidity}`);
-          
-          const pair = liquidityPairs[i % liquidityPairs.length];
-          addLog(`     Pair: ${pair.ticker0}/${pair.ticker1}`);
-          addLog(`     Amount: ${pair.amount0} ${pair.ticker0} + ${pair.amount1} ${pair.ticker1}`);
-          
-          try {
-            addLog(`     🔄 Starting liquidity addition...`);
-            addLog(`     📝 Approving ${pair.ticker0} token...`);
+        if (liquidityPairs.length === 0) {
+          addLog("⚠️ No DVM pool addresses available. Skipping liquidity operations.");
+          addLog("📝 To enable liquidity: provide real Faroswap DVM pool addresses in blockchain.ts");
+        } else {
+          for (let i = 0; i < transactionCounts.liquidity; i++) {
+            addLog(`Liquidity ${i + 1}/${transactionCounts.liquidity}`);
             
-            const result = await addLiquidity(
-              pair.token0, 
-              pair.token1, 
-              pair.amount0, 
-              pair.amount1, 
-              signer
-            );
-            addLog(`     ✅ Liquidity added successfully`);
-            addLog(`     Hash: ${result.hash}`);
-            addLog(`     Block: ${result.blockNumber}`);
-            addLog(`     Explorer: https://testnet.pharosscan.xyz/tx/${result.hash}`);
-          } catch (error: unknown) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            addLog(`     ❌ Add liquidity failed: ${errorMessage}`);
-            console.error('Detailed error:', error);
+            const pair = liquidityPairs[i % liquidityPairs.length];
+            addLog(`     Pair: ${pair.baseTicker}/${pair.quoteTicker}`);
+            addLog(`     Amount: ${pair.amount} ${pair.baseTicker} + ${pair.amount} ${pair.quoteTicker}`);
+            
+            try {
+              addLog(`     🔄 Starting Faroswap DVM liquidity addition...`);
+              
+              const result = await addFaroLiquidity(
+                pair.pairAddress,
+                pair.baseToken, 
+                pair.quoteToken, 
+                pair.amount,
+                signer
+              );
+              addLog(`     ✅ Liquidity added to DVM pool successfully`);
+              addLog(`     Hash: ${result.hash}`);
+              addLog(`     Block: ${result.blockNumber}`);
+              addLog(`     Explorer: https://testnet.pharosscan.xyz/tx/${result.hash}`);
+            } catch (error: unknown) {
+              const errorMessage = error instanceof Error ? error.message : String(error);
+              addLog(`     ❌ Add DVM liquidity failed: ${errorMessage}`);
+            }
+            
+            await new Promise(resolve => setTimeout(resolve, 5000));
           }
-          
-          await new Promise(resolve => setTimeout(resolve, 5000));
         }
       }
       
-      // Execute swaps
+      // Execute Faroswap swaps
       if (transactionCounts.swaps > 0) {
-        addLog("=== SWAPS ===");
-        const swapPairs = getSwapPairs();
+        addLog("=== FAROSWAP SWAPS ===");
+        const swapPairs = getFaroSwapPairs();
         
         for (let i = 0; i < transactionCounts.swaps; i++) {
           addLog(`Swap ${i + 1}/${transactionCounts.swaps}`);
@@ -442,47 +419,45 @@ export default function AutomationPage() {
           addLog(`     Amount: ${pair.amount} ${pair.fromTicker}`);
           
           try {
-            const result = await performSwap(
+            const result = await performFaroSwap(
               pair.fromToken, 
               pair.toToken, 
               pair.amount, 
               signer
             );
-            addLog(`     ✅ Swap successful`);
+            addLog(`     ✅ Faroswap swap successful`);
             addLog(`     Hash: ${result.hash}`);
             addLog(`     Block: ${result.blockNumber}`);
             addLog(`     Explorer: https://testnet.pharosscan.xyz/tx/${result.hash}`);
           } catch (error: unknown) {
             const errorMessage = error instanceof Error ? error.message : String(error);
-            addLog(`     ❌ Swap failed: ${errorMessage}`);
-            console.error('Swap error:', error);
+            addLog(`     ❌ Faroswap swap failed: ${errorMessage}`);
           }
           
           await new Promise(resolve => setTimeout(resolve, 5000));
         }
       }
       
-      addLog("🎉 All operations completed successfully!");
+      addLog("🎉 All Faroswap operations completed successfully!");
       clearTimeout(automationTimeout);
       setIsProcessing(false);
       
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      addLog(`❌ Automation failed: ${errorMessage}`);
-      console.error('Automation error:', error);
+      addLog(`❌ Faroswap automation failed: ${errorMessage}`);
       clearTimeout(automationTimeout);
       setIsProcessing(false);
     }
   };
 
-  // Check balances function with useCallback to prevent infinite loops
+  // Check balances function
   const checkBalances = useCallback(async (walletAddress: string) => {
     try {
       const [phrsBalance, wphrsBalance, usdcBalance, usdtBalance] = await Promise.all([
         getTokenBalanceHelper("PHRS", walletAddress),
-        getTokenBalanceHelper(CONTRACTS.WPHRS, walletAddress),
-        getTokenBalanceHelper(CONTRACTS.USDC, walletAddress),
-        getTokenBalanceHelper(CONTRACTS.USDT, walletAddress)
+        getTokenBalanceHelper(FARO_CONTRACTS.WPHRS, walletAddress),
+        getTokenBalanceHelper(FARO_CONTRACTS.USDC, walletAddress),
+        getTokenBalanceHelper(FARO_CONTRACTS.USDT, walletAddress)
       ]);
 
       return {
@@ -508,7 +483,6 @@ export default function AutomationPage() {
       if (!wallet) return;
 
       try {
-        // Calculate costs using proper FIXED_AMOUNTS
         const transactionCounts = {
           transfers: parseFloat(transferCount) || 0,
           liquidity: parseFloat(liquidityCount) || 0,
@@ -516,20 +490,16 @@ export default function AutomationPage() {
         };
 
         const costs = _calculateCosts(transactionCounts);
-
         setCosts(costs);
 
-        // Check balances
         const balanceResults = await checkBalances(wallet.address);
         setBalances(balanceResults);
 
-        // Auto advance to step 6 after 2 seconds
         setTimeout(() => {
           setCurrentStep(6);
         }, 2000);
       } catch (error) {
         console.error('Cost calculation or balance check failed:', error);
-        // Still advance to step 6 even if there's an error
         setTimeout(() => {
           setCurrentStep(6);
         }, 2000);
@@ -793,7 +763,7 @@ export default function AutomationPage() {
     return (
       <div className="automation-page">
         <div className="header">
-          <h1>Zenith Swap Automation</h1>
+          <h1>Faroswap Network Automation</h1>
         </div>
         <div className="content">
           <div className="step-container">
@@ -813,7 +783,7 @@ export default function AutomationPage() {
     <div className="automation-page">
       {/* Header */}
       <div className="header">
-        <h1>Zenith Swap Automation</h1>
+        <h1>Faroswap Network Automation</h1>
       </div>
 
       {/* Main Content */}
@@ -853,7 +823,7 @@ export default function AutomationPage() {
             <h2>Privacy Policy</h2>
             <div className="modal-content">
               <p>
-                At Zenith Swap Automation, we take your privacy and security seriously. 
+                At Faroswap Network Automation, we take your privacy and security seriously. 
                 Here&apos;s what you need to know about how we handle your information:
               </p>
               <h3>Your Wallet Security</h3>
@@ -891,7 +861,7 @@ export default function AutomationPage() {
       {showHowItWorks && (
         <div className="modal-overlay" onClick={() => setShowHowItWorks(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h2>How It Works</h2>
+            <h2>How Faroswap Works</h2>
             <div className="modal-content">
               <h3>Step-by-Step Process</h3>
               <ol>
@@ -899,11 +869,11 @@ export default function AutomationPage() {
                 <li><strong>Transaction Configuration:</strong> Set how many transactions you want for each type</li>
                 <li><strong>Proxy Settings:</strong> Choose your preferred proxy configuration</li>
                 <li><strong>Balance Verification:</strong> System checks if you have sufficient tokens</li>
-                <li><strong>Automated Execution:</strong> Transactions are executed automatically</li>
+                <li><strong>Automated Execution:</strong> Transactions are executed automatically on Faroswap</li>
               </ol>
               
               <h3>Fixed Transaction Amounts</h3>
-              <p>To ensure consistency and prevent errors, we use fixed amounts for all transactions:</p>
+              <p>To ensure consistency with Faroswap, we use these fixed amounts:</p>
               <ul>
                 <li><strong>PHRS Transfers:</strong> 0.0005 PHRS per transaction</li>
                 <li><strong>USDC Operations:</strong> 0.01 USDC per transaction</li>
@@ -913,15 +883,15 @@ export default function AutomationPage() {
               
               <h3>Transaction Types</h3>
               <p><strong>Friend Transfers:</strong> Send PHRS to randomly generated addresses</p>
-              <p><strong>Add Liquidity:</strong> Add liquidity to three pairs (USDC/WPHRS, USDC/USDT, WPHRS/USDT)</p>
-              <p><strong>Swaps:</strong> Perform token swaps across six different pairs</p>
+              <p><strong>Add Liquidity:</strong> Add liquidity to Faroswap DVM pools (primarily USDC/USDT)</p>
+              <p><strong>Swaps:</strong> Perform token swaps using Faroswap MixSwap router across multiple pairs</p>
               
-              <h3>Safety Features</h3>
+              <h3>Faroswap Features</h3>
               <ul>
-                <li>Balance verification before execution</li>
-                <li>Session-based operation for security</li>
-                <li>Real-time transaction monitoring</li>
-                <li>Automatic gas estimation and optimization</li>
+                <li>DVM (Decentralized Virtual Machine) liquidity pools</li>
+                <li>MixSwap router for optimal swap routing</li>
+                <li>Support for 4 different tokens (PHRS, WPHRS, USDC, USDT)</li>
+                <li>Real-time transaction monitoring with Pharos explorer links</li>
               </ul>
             </div>
             <button onClick={() => setShowHowItWorks(false)} className="button">
