@@ -53,6 +53,18 @@ export const FARO_FIXED_AMOUNTS = {
 
 const RPC_URL = "https://api.zan.top/node/v1/pharos/testnet/54b49326c9f44b6e8730dc5dd4348421";
 
+// TypeScript interfaces for API responses
+interface DodoRouteData {
+  value?: string;
+  data: string;
+  gasLimit?: number;
+}
+
+interface DodoRouteResponse {
+  status: number;
+  data?: DodoRouteData;
+}
+
 // Pool pairs from pools.json structure (would be loaded dynamically in real implementation)
 // TODO: Replace with real DVM pool addresses from Faroswap
 const POOL_PAIRS = {
@@ -219,7 +231,7 @@ async function getDodoRoute(
   fromToken: string, 
   toToken: string, 
   amount: string
-): Promise<any> {
+): Promise<DodoRouteResponse> {
   try {
     const deadline = Math.floor(Date.now() / 1000) + 600;
     const url = `https://api.dodoex.io/route-service/v2/widget/getdodoroute?chainId=688688&deadLine=${deadline}&apikey=a37546505892e1a952&slippage=3.225&source=dodoV2AndMixWasm&toTokenAddress=${toToken}&fromTokenAddress=${fromToken}&userAddr=${walletAddress}&estimateGas=true&fromAmount=${amount}`;
